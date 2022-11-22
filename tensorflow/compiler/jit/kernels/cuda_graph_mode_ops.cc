@@ -165,14 +165,8 @@ Status CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
     return errors::Internal("BaseGPUDevice not found");
   } 
   se::Stream* default_stream = gpu_device->GetDefaultTFStream();
-  stream_executor::gpu::GpuContext* gpu_ctx =
-      reinterpret_cast<stream_executor::gpu::GpuContext*>(
-          default_stream->parent()->implementation()->GpuContextHack());
   cudaStream_t cu_stream;
   cu_stream = *(static_cast<cudaStream_t*>(gpu_device->GetStream()));
-  // enable cuda graph mode
-  gpu_device->SetSingleStreamMode();
-  gpu_ctx->enable_single_stream_mode();
 
   FunctionLibraryRuntime::Handle handle;
   Status s_flib_instantiate = flib_->Instantiate(
@@ -264,9 +258,6 @@ Status CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
                   std::string("cuda graph create execute instance failed ") +
                   cudaGetErrorString(e_cu_instantiate));
   }
-
-  gpu_device->ResetStreamMode();
-  gpu_ctx->disable_single_stream_mode();
 
   for (int i = 0; i < out.size(); i++) {
     persist_rets_.emplace_back(PersistentTensor(out[i]));

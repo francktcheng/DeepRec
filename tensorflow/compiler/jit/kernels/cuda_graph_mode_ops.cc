@@ -288,13 +288,13 @@ Status CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
 
 void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
   tf_shared_lock lock(CgmodeCompileOp::compile_mu_);
-  bool do_recompile = false;
+  bool has_dynamic_input_shape = false;
   if (persist_args_.size() > 0 && persist_args_.size() == ctx->num_inputs()) {
     for (int i = 0; i < persist_args_.size(); i++) {
       if (persist_args_[i].AccessTensor(ctx)->shape() !=
           ctx->input(i).shape()) {
-        do_recompile = true;
-        VLOG(2) << "A recompile is triggered";
+        has_dynamic_input_shape = true;
+        VLOG(2) << "Detect a dynamic input shape";
         break;
       }
     }
@@ -302,13 +302,9 @@ void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
 
   CgmodeExecutableClosureStore::KeyT key;
   Status compile_succeed;
-  if (!is_compiled_ || do_recompile) {
-    if (do_recompile) {
-      persist_args_.clear();
-      persist_rets_.clear();
-    }
+  if (!is_compiled_ && !has_dynamic_input_shape) {
     compile_succeed = Compile(ctx, key);
-  } else {
+  } else if (!has_dynamic_input_shape) {
     std::vector<Tensor> cuda_graph_args;
     std::vector<Tensor> cuda_graph_rets;
 
@@ -323,6 +319,8 @@ void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
         CgmodeExecutableClosure(function_, cuda_graph_exec_, cuda_graph_args,
                                 cuda_graph_rets));
     compile_succeed = Status::OK();
+  } else {
+    compile_succeed = errors::Internal("dynamic input shape");
   }
 
   if (!compile_succeed.ok()) {
